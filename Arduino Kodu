@@ -1,0 +1,135 @@
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Ultrasonik
+#define TRIG_PIN 4
+#define ECHO_PIN 2
+
+// Motor (L298N)
+#define ENA 3
+#define IN1 7
+#define IN2 13
+
+// Buzzer
+#define BUZZER 8
+
+// RGB LED
+#define RED_PIN 9
+#define GREEN_PIN 10
+#define BLUE_PIN 11
+
+long sure;
+float mesafe;
+int motorHizi;
+
+// Zamanlayıcı Değişkenleri
+unsigned long buzzerBaslangicZamani = 0;
+bool buzzerCalisiyor = false;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  pinMode(BUZZER, OUTPUT);
+
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(BLUE_PIN, OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+}
+
+void loop() {
+  // Ultrasonik ölçüm
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  sure = pulseIn(ECHO_PIN, HIGH, 30000);
+  mesafe = (sure * 0.034) / 2;
+
+  // Önce mesafeyi gönder (Bilgisayar okusun)
+  Serial.println(mesafe);
+
+  // Motor (Opsiyonel, çalışmaya devam etsin)
+  motorHizi = 70;
+  analogWrite(ENA, motorHizi);
+
+  // ---------------------------------------------------------
+  // YENİ MANTIK: Kararı Bilgisayar (Python) Verir!
+  // Biz sadece emre uyarız.
+  // ---------------------------------------------------------
+
+  if (Serial.available() > 0) {
+    char sinyal = Serial.read();
+
+    if (sinyal == '1') {
+      // --- ALARM MODU ---
+      // 1. Işığı Yak (Sürekli)
+      analogWrite(RED_PIN, 255);
+      analogWrite(GREEN_PIN, 0);
+      analogWrite(BLUE_PIN, 0);
+
+      // 2. Buzzer'ı Başlat ve Sayacı Kur
+      digitalWrite(BUZZER, HIGH);
+      buzzerBaslangicZamani = millis();
+      buzzerCalisiyor = true;
+
+      lcd.setCursor(0, 1);
+      lcd.print("Buzlanma TESPIT!");
+    } else if (sinyal == '0') {
+      // --- GÜVENLİ MOD ---
+      // Her şeyi kapat
+      digitalWrite(BUZZER, LOW);
+      buzzerCalisiyor = false;
+
+      analogWrite(RED_PIN, 0);
+      analogWrite(GREEN_PIN, 255);
+      analogWrite(BLUE_PIN, 0);
+
+      lcd.setCursor(0, 1);
+      lcd.print("Sistem Guvenli  ");
+    }
+  }
+
+  // ---------------------------------------------------------
+  // ZAMAN KONTROLÜ (10 Saniye Kuralı)
+  // ---------------------------------------------------------
+  if (buzzerCalisiyor) {
+    // Şimdiki zaman - Başlangıç > 5000 ms (5 sn) ise
+    if (millis() - buzzerBaslangicZamani > 5000) {
+      digitalWrite(BUZZER, LOW); // Sadece sesi kapat
+      buzzerCalisiyor = false;   // Sayacı durdur
+                                 // Kırmızı ışık YANMAYA DEVAM EDER
+    }
+  }
+
+  // LCD Mesafe Yazdırma (Her zaman çalışsın)
+  // LCD Mesafe Yazdırma (250ms'de bir güncelle - Titremeyi Önler)
+  static unsigned long sonLcdGuncelleme = 0;
+
+  if (millis() - sonLcdGuncelleme > 250) {
+    sonLcdGuncelleme = millis();
+
+    lcd.setCursor(0, 0);
+    lcd.print("Mesafe:       "); // Önce temizle (üzerine yazmayı önler)
+    lcd.setCursor(7, 0);         // "Mesafe:" yazısının yanına git
+    lcd.print(mesafe);
+    lcd.print(" cm");
+  }
+
+  delay(50);
+}
